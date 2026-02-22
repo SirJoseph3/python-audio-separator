@@ -28,6 +28,7 @@ from models_config import (
     EXTENDED_MODELS, get_all_models, get_categories, get_model_choices,
     find_model_filename, add_custom_model, delete_custom_model, load_custom_models,
     get_custom_models_list, ensure_model_files_downloaded,
+    is_custom_py_model, get_custom_model_config_path, STEM_INVERTED_MODELS,
     get_audio_duration, split_audio_segments, concatenate_segment_outputs,
     MAX_UNSPLIT_DURATION, SEGMENT_DURATION
 )
@@ -426,6 +427,8 @@ def download_from_google_drive(url):
             except Exception as e:
                 logger.warning(f"Failed to delete temporary file {temp_output_path}: {str(e)}")
 
+
+
 def roformer_separator(audio, model_key, seg_size, override_seg_size, overlap, pitch_shift, model_dir, output_dir, out_format, norm_thresh, amp_thresh, batch_size, exclude_stems="", progress=gr.Progress(track_tqdm=True)):
     if not audio:
         raise ValueError("No audio or video file provided.")
@@ -485,6 +488,115 @@ def roformer_separator(audio, model_key, seg_size, override_seg_size, overlap, p
             logger.warning(f"Pre-download warning for {model}: {dl_msg}")
 
         logger.info(f"Separating {base_name} with {model_key} on {device}")
+
+        # ── Pre-process settings before passing to audio_separator ──
+        config_path = get_custom_model_config_path(model, model_dir)
+        if config_path and os.path.isfile(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config_content = f.read()
+                
+                modified_config = False
+
+                # 1. Hot-patch Gabox/custom models (num_subbands -> num_bands)
+                if 'num_subbands' in config_content:
+                    logger.info(f"🔧 Hot-patching config {config_path}: replacing 'num_subbands' with 'num_bands'")
+                    config_content = config_content.replace('num_subbands', 'num_bands')
+                    modified_config = True
+
+                # 2. Hot-patch MelBandRoformer configs that lack model_type
+                # audio_separator defaults to bs_roformer for configs without a type, which crashes melband models
+                if 'num_bands' in config_content and 'freqs_per_bands' not in config_content:
+                    if 'model_type:' not in config_content and 'type: mel_band_roformer' not in config_content:
+                        logger.info(f"🔧 Hot-patching config {config_path} with type: mel_band_roformer")
+                        config_content += '\n\nmodel_type: mel_band_roformer\ntype: mel_band_roformer\n'
+                        modified_config = True
+                
+                if modified_config:
+                    with open(config_path, 'w', encoding='utf-8') as f:
+                        f.write(config_content)
+            except Exception as e:
+                logger.warning(f"Failed to hot-patch config {config_path}: {e}")
+
+        # 2. Monkey-patch audio_separator for HyperACEv2 models
+        if is_custom_py_model(model):
+            logger.info(f"⚡ Custom model detected ({model}). Monkey-patching audio_separator with custom BSRoformer...")
+            try:
+                import importlib.util
+                import sys
+                from models_config import MODEL_CACHE_DIR
+                
+                custom_py_path = None
+                
+                # SESA downloads the py script into the model cache directly
+                search_paths = [
+                    os.path.join(MODEL_CACHE_DIR, 'bs_roformer.py'),
+                    os.path.join(os.getcwd(), 'models', 'bs_roformer', 'bs_roformer_custom', 'bs_roformer.py'),
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'bs_roformer', 'bs_roformer_custom', 'bs_roformer.py')
+                ]
+                
+                for candidate in search_paths:
+                    if os.path.isfile(candidate):
+                        custom_py_path = candidate
+                        break
+                
+                if not custom_py_path:
+                    logger.error(f"Failed to monkey-patch audio_separator: Could not find custom bs_roformer.py. Searched roots: {search_paths}")
+                else:
+                    # Hot-patch the downloaded bs_roformer.py to fix absolute imports
+                    try:
+                        with open(custom_py_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        
+                        modified = False
+                        if 'models.bs_roformer.attend' in content:
+                            content = content.replace('models.bs_roformer.attend', 'audio_separator.separator.uvr_lib_v5.roformer.attend')
+                            modified = True
+                        if 'models.bs_roformer.attend_sage' in content:
+                            content = content.replace('models.bs_roformer.attend_sage', 'audio_separator.separator.uvr_lib_v5.roformer.attend')
+                            modified = True
+                            
+                        if modified:
+                            with open(custom_py_path, 'w', encoding='utf-8') as f:
+                                f.write(content)
+                            logger.info(f"🔧 Hot-patched imports in {custom_py_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to check/hot-patch bs_roformer.py imports: {e}")
+                
+                    # Dynamically load the custom BSRoformer class
+                    spec = importlib.util.spec_from_file_location("custom_bs_roformer", custom_py_path)
+                    if spec is not None and spec.loader is not None:
+                        custom_module = importlib.util.module_from_spec(spec)
+                        sys.modules["custom_bs_roformer"] = custom_module
+                        spec.loader.exec_module(custom_module)
+                        CustomBSRoformer = custom_module.BSRoformer
+                    else:
+                        raise ImportError(f"Could not load custom_bs_roformer from {custom_py_path}")
+                    
+                    patched = False
+                    
+                    # Try patching the roformer_loader where it's used
+                    try:
+                        import audio_separator.separator.roformer.roformer_loader as roformer_loader
+                        roformer_loader.BSRoformer = CustomBSRoformer
+                        logger.info("✅ Patched audio_separator.separator.roformer.roformer_loader.BSRoformer")
+                        patched = True
+                    except ImportError:
+                        pass
+                    
+                    # Try patching the definition file just in case
+                    try:
+                        import audio_separator.separator.uvr_lib_v5.roformer.bs_roformer as bs_roformer_lib
+                        bs_roformer_lib.BSRoformer = CustomBSRoformer
+                        logger.info("✅ Patched audio_separator.separator.uvr_lib_v5.roformer.bs_roformer.BSRoformer")
+                        patched = True
+                    except ImportError:
+                        pass
+                    
+                    if not patched:
+                        logger.warning("⚠️ Could not find audio_separator internal BSRoformer to patch!")
+            except Exception as e:
+                logger.error(f"Failed to monkey-patch audio_separator: {e}")
 
         # ── Large file segmentation ──
         audio_duration = get_audio_duration(audio_to_process)
@@ -780,6 +892,65 @@ def auto_ensemble_process(audio, model_keys, state, seg_size=64, overlap=0.1, ou
                         dl_ok, dl_msg = ensure_model_files_downloaded(model, model_dir)
                         if not dl_ok:
                             logger.warning(f"Pre-download warning: {dl_msg}")
+                        
+                        # Monkey-patch BSRoformer for custom models (e.g. HyperACEv2)
+                        if is_custom_py_model(model):
+                            logger.info(f"⚡ [Ensemble] Custom model detected ({model}). Monkey-patching BSRoformer...")
+                            try:
+                                import importlib.util
+                                import sys as _sys
+                                
+                                custom_py_path = None
+                                search_paths = [
+                                    os.path.join(model_dir, 'bs_roformer.py'),
+                                    os.path.join(os.getcwd(), 'models', 'bs_roformer', 'bs_roformer_custom', 'bs_roformer.py'),
+                                    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'bs_roformer', 'bs_roformer_custom', 'bs_roformer.py')
+                                ]
+                                for candidate in search_paths:
+                                    if os.path.isfile(candidate):
+                                        custom_py_path = candidate
+                                        break
+                                
+                                if custom_py_path:
+                                    # Hot-patch imports
+                                    with open(custom_py_path, 'r', encoding='utf-8') as f:
+                                        content = f.read()
+                                    modified = False
+                                    if 'models.bs_roformer.attend' in content:
+                                        content = content.replace('models.bs_roformer.attend', 'audio_separator.separator.uvr_lib_v5.roformer.attend')
+                                        modified = True
+                                    if 'models.bs_roformer.attend_sage' in content:
+                                        content = content.replace('models.bs_roformer.attend_sage', 'audio_separator.separator.uvr_lib_v5.roformer.attend')
+                                        modified = True
+                                    if modified:
+                                        with open(custom_py_path, 'w', encoding='utf-8') as f:
+                                            f.write(content)
+                                        logger.info(f"🔧 [Ensemble] Hot-patched imports in {custom_py_path}")
+                                    
+                                    spec = importlib.util.spec_from_file_location("custom_bs_roformer", custom_py_path)
+                                    if spec and spec.loader:
+                                        custom_module = importlib.util.module_from_spec(spec)
+                                        _sys.modules["custom_bs_roformer"] = custom_module
+                                        spec.loader.exec_module(custom_module)
+                                        CustomBSRoformer = custom_module.BSRoformer
+                                        
+                                        try:
+                                            import audio_separator.separator.roformer.roformer_loader as roformer_loader
+                                            roformer_loader.BSRoformer = CustomBSRoformer
+                                            logger.info("✅ [Ensemble] Patched roformer_loader.BSRoformer")
+                                        except ImportError:
+                                            pass
+                                        try:
+                                            import audio_separator.separator.uvr_lib_v5.roformer.bs_roformer as bs_roformer_lib
+                                            bs_roformer_lib.BSRoformer = CustomBSRoformer
+                                            logger.info("✅ [Ensemble] Patched uvr_lib_v5.roformer.bs_roformer.BSRoformer")
+                                        except ImportError:
+                                            pass
+                                else:
+                                    logger.warning(f"⚠️ [Ensemble] Custom bs_roformer.py not found. Searched: {search_paths}")
+                            except Exception as e:
+                                logger.error(f"[Ensemble] Failed to monkey-patch BSRoformer: {e}")
+                        
                         separator = Separator(
                             log_level=logging.INFO,
                             model_file_dir=model_dir,
@@ -806,8 +977,13 @@ def auto_ensemble_process(audio, model_keys, state, seg_size=64, overlap=0.1, ou
                         separation = separator.separate(audio_to_process)
                         stems = [os.path.join(output_dir, file_name) for file_name in separation]
                         result = []
+                        stem_inverted = model in STEM_INVERTED_MODELS
                         for stem in stems:
-                            stem_type = "vocals" if "vocals" in os.path.basename(stem).lower() else "other"
+                            has_vocals_label = "vocals" in os.path.basename(stem).lower()
+                            if stem_inverted:
+                                stem_type = "other" if has_vocals_label else "vocals"
+                            else:
+                                stem_type = "vocals" if has_vocals_label else "other"
                             permanent_stem_path = os.path.join(permanent_output_dir, f"{base_name}_{stem_type}_{model_key.replace(' | ', '_').replace(' ', '_')}.{out_format}")
                             shutil.copy(stem, permanent_stem_path)
                             state["model_outputs"][model_key][stem_type].append(permanent_stem_path)
@@ -890,20 +1066,108 @@ def download_audio_wrapper(url, cookie_file):
     return file_path, status  # Return file_path instead of audio_data
 
 # ─── Batch Processing ────────────────────────────────────────────────────────
-def batch_separator(audio_files, model_key, seg_size, override_seg_size, overlap, pitch_shift, model_dir, output_dir, out_format, norm_thresh, amp_thresh, batch_size, exclude_stems="", progress=gr.Progress(track_tqdm=True)):
-    """Process up to 10 audio files sequentially."""
-    if not audio_files:
-        raise ValueError("No audio files provided.")
-    if len(audio_files) > 10:
-        raise ValueError("Maximum 10 files per batch.")
+def batch_separator(audio_files, batch_urls, cookies_batch, batch_path, model_key, seg_size, override_seg_size, overlap, pitch_shift, model_dir, output_dir, out_format, norm_thresh, amp_thresh, batch_size, exclude_stems="", progress=gr.Progress(track_tqdm=True)):
+    """Process files from uploads, URLs, and directory paths."""
+    all_files_to_process = []
+    
+    # 1. Handle uploaded files
+    if audio_files:
+        for f in audio_files:
+            all_files_to_process.append(f.name if hasattr(f, 'name') else f)
+            
+    # 2. Handle batch URLs
+    if batch_urls and batch_urls.strip():
+        # Split by comma or newline
+        urls = [u.strip() for u in batch_urls.replace('\n', ',').split(',') if u.strip()]
+        for i, url in enumerate(urls):
+            progress(0, desc=f"Downloading URL {i+1}/{len(urls)}...")
+            try:
+                # Use cookies if provided
+                cookie_path = cookies_batch.name if cookies_batch and hasattr(cookies_batch, 'name') else cookies_batch
+                downloaded_file, dl_status = download_audio_wrapper(url, cookies_batch)
+                if downloaded_file:
+                    all_files_to_process.append(downloaded_file)
+                    logger.info(f"Downloaded batch URL: {url} -> {downloaded_file}")
+                else:
+                    logger.error(f"Failed to download batch URL: {url}")
+            except Exception as e:
+                logger.error(f"Error downloading batch URL {url}: {e}")
 
+    # 3. Handle directory path
+    if batch_path and batch_path.strip():
+        if os.path.isdir(batch_path):
+            valid_exts = ['.wav', '.mp3', '.flac', '.ogg', '.opus', '.m4a', '.aiff', '.ac3', '.mp4', '.mov', '.avi', '.mkv', '.webm']
+            for root, _, files in os.walk(batch_path):
+                for f in files:
+                    if any(f.lower().endswith(ext) for ext in valid_exts):
+                        all_files_to_process.append(os.path.join(root, f))
+            logger.info(f"Found {len(all_files_to_process)} files in path {batch_path}")
+        else:
+            logger.warning(f"Batch path {batch_path} is not a valid directory")
+
+    if not all_files_to_process:
+        raise ValueError("No files found to process (uploads, URLs, or directory).")
+
+    # 4. Monkey-patch BSRoformer for custom models (like HyperACEv2)
+    # We find the model filename once and patch if needed
+    model_filename = find_model_filename(model_key)
+    if is_custom_py_model(model_filename):
+        logger.info(f"⚡ [Batch] Custom model detected ({model_filename}). Monkey-patching BSRoformer...")
+        try:
+            import importlib.util
+            import sys as _sys
+            
+            custom_py_path = None
+            search_paths = [
+                os.path.join(model_dir, 'bs_roformer.py'),
+                os.path.join(os.getcwd(), 'models', 'bs_roformer', 'bs_roformer_custom', 'bs_roformer.py'),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'bs_roformer', 'bs_roformer_custom', 'bs_roformer.py')
+            ]
+            for candidate in search_paths:
+                if os.path.isfile(candidate):
+                    custom_py_path = candidate
+                    break
+            
+            if custom_py_path:
+                with open(custom_py_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                modified = False
+                if 'models.bs_roformer.attend' in content:
+                    content = content.replace('models.bs_roformer.attend', 'audio_separator.separator.uvr_lib_v5.roformer.attend')
+                    modified = True
+                if 'models.bs_roformer.attend_sage' in content:
+                    content = content.replace('models.bs_roformer.attend_sage', 'audio_separator.separator.uvr_lib_v5.roformer.attend')
+                    modified = True
+                if modified:
+                    with open(custom_py_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                
+                spec = importlib.util.spec_from_file_location("custom_bs_roformer_batch", custom_py_path)
+                if spec and spec.loader:
+                    custom_module = importlib.util.module_from_spec(spec)
+                    _sys.modules["custom_bs_roformer_batch"] = custom_module
+                    spec.loader.exec_module(custom_module)
+                    CustomBSRoformer = custom_module.BSRoformer
+                    
+                    try:
+                        import audio_separator.separator.roformer.roformer_loader as roformer_loader
+                        roformer_loader.BSRoformer = CustomBSRoformer
+                    except ImportError: pass
+                    try:
+                        import audio_separator.separator.uvr_lib_v5.roformer.bs_roformer as bs_roformer_lib
+                        bs_roformer_lib.BSRoformer = CustomBSRoformer
+                    except ImportError: pass
+                    logger.info("✅ [Batch] Monkey-patch successful")
+        except Exception as e:
+            logger.error(f"[Batch] Failed to monkey-patch BSRoformer: {e}")
+
+    # 5. Process all files
     all_output_files = []
-    status_lines = []
-    for i, audio in enumerate(audio_files):
-        # Handle gr.File objects
-        audio_path = audio.name if hasattr(audio, 'name') else audio
-        base = os.path.splitext(os.path.basename(audio_path))[0]
-        progress((i) / len(audio_files), desc=f"Processing file {i+1}/{len(audio_files)}: {base}")
+    status_lines = [f"Found {len(all_files_to_process)} files to process."]
+    
+    for i, audio_path in enumerate(all_files_to_process):
+        base = os.path.basename(audio_path)
+        progress((i) / len(all_files_to_process), desc=f"Processing {i+1}/{len(all_files_to_process)}: {base}")
         try:
             stem1, stem2, files = roformer_separator(
                 audio_path, model_key, seg_size, override_seg_size, overlap, pitch_shift,
@@ -914,7 +1178,7 @@ def batch_separator(audio_files, model_key, seg_size, override_seg_size, overlap
             status_lines.append(f"✅ {base}: {len(files)} stems")
         except Exception as e:
             status_lines.append(f"❌ {base}: {str(e)[:100]}")
-            logger.error(f"Batch processing error for {base}: {e}")
+            logger.error(f"Batch error for {base}: {e}")
 
     status_text = "\n".join(status_lines)
     return status_text, all_output_files
@@ -1016,6 +1280,10 @@ def create_interface():
                     gr.Markdown("Upload multiple audio files and process them all with the same model.")
                     batch_audio = gr.File(label="🎧 Upload Audio Files", file_count="multiple", file_types=['.wav', '.mp3', '.flac', '.ogg', '.opus', '.m4a', '.aiff', '.ac3', '.mp4', '.mov', '.avi', '.mkv'], interactive=True)
                     with gr.Row():
+                        batch_urls = gr.Textbox(label="🔗 Batch URLs (YouTube/Direct)", placeholder="Enter multiple URLs separated by commas or newlines", lines=3, interactive=True)
+                        cookies_batch = gr.File(label="🍪 Cookies File for Batch", file_types=[".txt"], interactive=True)
+                    batch_path = gr.Textbox(label="📂 Directory Path (e.g. Google Drive folder)", placeholder="/content/drive/MyDrive/my_audio_folder", interactive=True)
+                    with gr.Row():
                         batch_category = gr.Dropdown(label="📚 Category", choices=get_categories(), value="Vocals", interactive=True)
                         batch_model = gr.Dropdown(label="🛠️ Model", choices=get_model_choices("Vocals"), interactive=True, allow_custom_value=True)
                     with gr.Row():
@@ -1083,7 +1351,8 @@ def create_interface():
         batch_button.click(
             fn=batch_separator,
             inputs=[
-                batch_audio, batch_model, batch_seg_size, batch_override_seg, batch_overlap,
+                batch_audio, batch_urls, cookies_batch, batch_path,
+                batch_model, batch_seg_size, batch_override_seg, batch_overlap,
                 batch_pitch_shift, model_file_dir, output_dir, output_format,
                 norm_threshold, amp_threshold, batch_size, batch_exclude
             ],
