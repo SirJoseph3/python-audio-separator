@@ -54,9 +54,7 @@ class STFT:
 
 def get_norm(norm_type):
     def norm(c, norm_type):
-        if norm_type is None:
-            return nn.Identity()
-        elif norm_type == 'BatchNorm':
+        if norm_type == 'BatchNorm':
             return nn.BatchNorm2d(c)
         elif norm_type == 'InstanceNorm':
             return nn.InstanceNorm2d(c, affine=True)
@@ -154,25 +152,11 @@ class TFC_TDF_net(nn.Module):
         self.config = config
         self.device = device
 
-        # Defensive checks for normalization configuration
-        try:
-            norm_type = config.model.norm
-        except (AttributeError, KeyError):
-            norm_type = None
-            print("Warning: Model configuration missing 'norm' attribute, using Identity normalization")
-        
-        norm = get_norm(norm_type=norm_type)
-        
-        try:
-            act_type = config.model.act
-        except (AttributeError, KeyError):
-            act_type = 'gelu'
-            print("Warning: Model configuration missing 'act' attribute, using GELU activation")
-            
-        act = get_act(act_type=act_type)
+        norm = get_norm(norm_type=getattr(config.model, 'norm', 'Identity'))
+        act = get_act(act_type=getattr(config.model, 'act', 'gelu'))
 
         self.num_target_instruments = 1 if config.training.target_instrument else len(config.training.instruments)
-        self.num_subbands = config.model.num_subbands
+        self.num_subbands = getattr(config.model, 'num_subbands', None) or config.model.num_bands
 
         dim_c = self.num_subbands * config.audio.num_channels * 2
         n = config.model.num_scales
