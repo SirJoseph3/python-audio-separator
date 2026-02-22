@@ -590,19 +590,27 @@ class Separator:
             model_basename = model_filename.rsplit('.', 1)[0]
             # Try to find a matching YAML config file in the model directory
             try:
-                for f in os.listdir(self.model_file_dir):
-                    if f.endswith('.yaml') and not f.startswith('model_data') and f != 'download_checks.json':
-                        # Prefer YAML files that share a name prefix with the model
-                        if model_basename in f or f.replace('.yaml', '') in model_basename:
+                yaml_candidates = [
+                    f for f in os.listdir(self.model_file_dir)
+                    if f.endswith('.yaml') and not f.startswith('model_data') and f != 'download_checks.json'
+                ]
+                # Pass 1: exact name match (model_basename.yaml == f), case-insensitive
+                for f in yaml_candidates:
+                    if f.lower() == model_basename.lower() + '.yaml':
+                        yaml_config_filename = f
+                        break
+                # Pass 2: yaml stem is a substring of model_basename (e.g. "v10" in "inst_gaboxFlowersV10")
+                if yaml_config_filename is None:
+                    for f in yaml_candidates:
+                        stem = f.replace('.yaml', '').lower()
+                        if stem and stem in model_basename.lower():
                             yaml_config_filename = f
                             break
-                # If no exact match, try any YAML that was recently modified (likely downloaded together)
+                # Pass 3: fallback to most recently modified YAML
                 if yaml_config_filename is None:
-                    yaml_files = [f for f in os.listdir(self.model_file_dir) if f.endswith('.yaml') and not f.startswith('model_data')]
-                    if yaml_files:
-                        # Sort by modification time, newest first
-                        yaml_files.sort(key=lambda x: os.path.getmtime(os.path.join(self.model_file_dir, x)), reverse=True)
-                        yaml_config_filename = yaml_files[0]
+                    if yaml_candidates:
+                        yaml_candidates.sort(key=lambda x: os.path.getmtime(os.path.join(self.model_file_dir, x)), reverse=True)
+                        yaml_config_filename = yaml_candidates[0]
             except Exception as e:
                 self.logger.warning(f"Error scanning for YAML config: {e}")
             
@@ -687,6 +695,16 @@ class Separator:
 
         if "roformer" in model_data_yaml_filepath:
             model_data["is_roformer"] = True
+
+        # Also detect Roformer models by their content (for configs with non-roformer filenames like inst_v1e.yaml)
+        if "is_roformer" not in model_data:
+            model_type_val = model_data.get("model_type", "") or model_data.get("type", "") or ""
+            if "roformer" in str(model_type_val).lower():
+                model_data["is_roformer"] = True
+            elif isinstance(model_data.get("model"), dict):
+                # num_bands = MelBandRoformer, freqs_per_bands = BSRoformer
+                if "num_bands" in model_data["model"] or "freqs_per_bands" in model_data["model"]:
+                    model_data["is_roformer"] = True
 
         return model_data
 
