@@ -777,6 +777,16 @@ def auto_ensemble_process(audio, model_keys, state, seg_size=64, overlap=0.1, ou
             state["processed_stems"] = []
             state["model_outputs"] = {model_key: {"vocals": [], "other": []} for model_key in model_keys}
             logger.info("New audio detected, resetting ensemble state.")
+            audio_extensions = {'.wav', '.flac', '.mp3', '.ogg', '.opus', '.aiff'}
+            for clean_dir in [output_dir, os.path.join(output_dir, "permanent_stems")]:
+                if os.path.isdir(clean_dir):
+                    for f in os.listdir(clean_dir):
+                        if os.path.splitext(f)[1].lower() in audio_extensions:
+                            try:
+                                os.remove(os.path.join(clean_dir, f))
+                                logger.info(f"Cleaned up old output file: {f}")
+                            except Exception as e:
+                                logger.warning(f"Could not delete {f}: {e}")
 
         use_tta = use_tta == "True"
         base_name = os.path.splitext(os.path.basename(audio))[0].replace(' ', '_')  # Boşlukları alt çizgi ile değiştir
