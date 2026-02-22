@@ -16,6 +16,7 @@ import re
 import shutil
 import requests
 import urllib.parse
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -249,7 +250,7 @@ MODEL_DOWNLOAD_URLS = {
     'model_chorus_bs_roformer_ep_146_sdr_23.8613.ckpt': ['https://huggingface.co/Sucial/Chorus_Male_Female_BS_RoFormer/resolve/main/model_chorus_bs_roformer.yaml', 'https://huggingface.co/Sucial/Chorus_Male_Female_BS_RoFormer/resolve/main/model_chorus_bs_roformer_ep_146_sdr_23.8613.ckpt'],
     'model_chorus_bs_roformer_ep_267_sdr_24.1275.ckpt': ['https://huggingface.co/Sucial/Chorus_Male_Female_BS_RoFormer/resolve/main/model_chorus_bs_roformer.yaml', 'https://huggingface.co/Sucial/Chorus_Male_Female_BS_RoFormer/resolve/main/model_chorus_bs_roformer_ep_267_sdr_24.1275.ckpt'],
     'BS-Rofo-SW-Fixed.ckpt': ['https://huggingface.co/jarredou/BS-Rofo-SW-Fixed/resolve/main/BS-Rofo-SW-Fixed.yaml', 'https://huggingface.co/jarredou/BS-Rofo-SW-Fixed/resolve/main/BS-Rofo-SW-Fixed.ckpt'],
-    'bs_roformer_voc_hyperacev2.ckpt': ['https://huggingface.co/pcunwa/BS-Roformer-HyperACEv2/resolve/main/bs_roformer_voc_hyperacev2.yaml', 'https://huggingface.co/pcunwa/BS-Roformer-HyperACEv2/resolve/main/bs_roformer_voc_hyperacev2.ckpt'],
+    'bs_roformer_voc_hyperacev2.ckpt': [('https://huggingface.co/pcunwa/BS-Roformer-HyperACE/resolve/main/v2_voc/config.yaml', 'config_hyperacev2_voc.yaml'), 'https://huggingface.co/pcunwa/BS-Roformer-HyperACE/resolve/main/v2_voc/bs_roformer_voc_hyperacev2.ckpt'],
     'BS-Roformer-Resurrection.ckpt': ['https://huggingface.co/pcunwa/BS-Roformer-Resurrection/resolve/main/BS-Roformer-Resurrection.yaml', 'https://huggingface.co/pcunwa/BS-Roformer-Resurrection/resolve/main/BS-Roformer-Resurrection.ckpt'],
     'bs_roformer_revive3e.ckpt': ['https://huggingface.co/pcunwa/BS-Roformer-Revive/resolve/main/bs_roformer_revive3e.yaml', 'https://huggingface.co/pcunwa/BS-Roformer-Revive/resolve/main/bs_roformer_revive3e.ckpt'],
     'bs_roformer_revive2.ckpt': ['https://huggingface.co/pcunwa/BS-Roformer-Revive/resolve/main/bs_roformer_revive2.yaml', 'https://huggingface.co/pcunwa/BS-Roformer-Revive/resolve/main/bs_roformer_revive2.ckpt'],
@@ -257,28 +258,27 @@ MODEL_DOWNLOAD_URLS = {
     'karaoke_bs_roformer_anvuew.ckpt': ['https://huggingface.co/anvuew/karaoke_bs_roformer/resolve/main/karaoke_bs_roformer_anvuew.yaml', 'https://huggingface.co/anvuew/karaoke_bs_roformer/resolve/main/karaoke_bs_roformer_anvuew.ckpt'],
     'BS_ResurrectioN.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/bsroformers/BS_ResurrectioN.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/bsroformers/BS_ResurrectioN.ckpt'],
     # === Instrumental Models ===
-    'Neo_InstVFX.ckpt': ['https://huggingface.co/naitotomato/Neo_InstVFX/resolve/main/Neo_InstVFX.yaml', 'https://huggingface.co/naitotomato/Neo_InstVFX/resolve/main/Neo_InstVFX.ckpt'],
+    'Neo_InstVFX.ckpt': ['https://huggingface.co/natanworkspace/melband_roformer/resolve/main/config_neo_inst.yaml', 'https://huggingface.co/natanworkspace/melband_roformer/resolve/main/Neo_InstVFX.ckpt'],
     'BS-Roformer-Resurrection-Inst.ckpt': ['https://huggingface.co/pcunwa/BS-Roformer-Resurrection/resolve/main/BS-Roformer-Resurrection-Inst.yaml', 'https://huggingface.co/pcunwa/BS-Roformer-Resurrection/resolve/main/BS-Roformer-Resurrection-Inst.ckpt'],
-    'bs_roformer_inst_hyperacev2.ckpt': ['https://huggingface.co/pcunwa/BS-Roformer-HyperACEv2/resolve/main/bs_roformer_inst_hyperacev2.yaml', 'https://huggingface.co/pcunwa/BS-Roformer-HyperACEv2/resolve/main/bs_roformer_inst_hyperacev2.ckpt'],
+    'bs_roformer_inst_hyperacev2.ckpt': [('https://huggingface.co/pcunwa/BS-Roformer-HyperACE/resolve/main/v2_inst/config.yaml', 'bs_roformer_inst_hyperacev2.yaml'), 'https://huggingface.co/pcunwa/BS-Roformer-HyperACE/resolve/main/v2_inst/bs_roformer_inst_hyperacev2.ckpt'],
     'bs_large_v2_inst.ckpt': ['https://huggingface.co/pcunwa/BS-Roformer-1076/resolve/main/BS-Roformer_LargeV1.yaml', 'https://huggingface.co/pcunwa/BS-Roformer-1076/resolve/main/bs_large_v2_inst.ckpt'],
-    'bs_roformer_fno.ckpt': ['https://huggingface.co/pcunwa/BS-Roformer-FNO/resolve/main/bs_roformer_fno.yaml', 'https://huggingface.co/pcunwa/BS-Roformer-FNO/resolve/main/bs_roformer_fno.ckpt'],
     'rifforge_full_sdr_14.2436.ckpt': ['https://huggingface.co/meskvlla33/rifforge/resolve/main/rifforge_config.yaml', 'https://huggingface.co/meskvlla33/rifforge/resolve/main/rifforge_full_sdr_14.2436.ckpt'],
-    'melband_roformer_inst_v1.ckpt': ['https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/melband_roformer_inst_v1.ckpt'],
-    'inst_v1e_plus.ckpt': ['https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/inst_v1e_plus.ckpt'],
-    'inst_v1_plus_test.ckpt': ['https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/inst_v1_plus_test.ckpt'],
-    'melband_roformer_inst_v2.ckpt': ['https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/melband_roformer_inst_v2.ckpt'],
-    'mel_band_roformer_instrumental_becruily.ckpt': ['https://huggingface.co/becruily/mel-band-roformer-instrumental/resolve/main/config_instrumental_becruily.yaml', 'https://huggingface.co/becruily/mel-band-roformer-instrumental/resolve/main/mel_band_roformer_instrumental_becruily.ckpt'],
-    'inst_v1e.ckpt': ['https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/inst_v1e.ckpt'],
-    'inst_gabox.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.ckpt'],
-    'inst_gaboxBv1.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gaboxBv1.ckpt'],
-    'inst_gaboxBv2.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gaboxBv2.ckpt'],
-    'inst_gaboxFv2.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gaboxFv2.ckpt'],
-    'inst_gaboxFv3.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gaboxFv3.ckpt'],
-    'intrumental_gabox.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/intrumental_gabox.ckpt'],
-    'inst_Fv4Noise.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_Fv4Noise.ckpt'],
-    'inst_Fv4.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_Fv4.ckpt'],
-    'INSTV5.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/INSTV5.ckpt'],
-    'INSTV5N.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/INSTV5N.ckpt'],
+    'melband_roformer_inst_v1.ckpt': [('https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'melband_roformer_inst_v1.yaml'), 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/melband_roformer_inst_v1.ckpt'],
+    'inst_v1e_plus.ckpt': [('https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'inst_v1e_plus.yaml'), 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/inst_v1e_plus.ckpt'],
+    'inst_v1_plus_test.ckpt': [('https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'inst_v1_plus_test.yaml'), 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/inst_v1_plus_test.ckpt'],
+    'melband_roformer_inst_v2.ckpt': [('https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'melband_roformer_inst_v2.yaml'), 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/melband_roformer_inst_v2.ckpt'],
+    'mel_band_roformer_instrumental_becruily.ckpt': [('https://huggingface.co/becruily/mel-band-roformer-instrumental/resolve/main/config_instrumental_becruily.yaml', 'mel_band_roformer_instrumental_becruily.yaml'), 'https://huggingface.co/becruily/mel-band-roformer-instrumental/resolve/main/mel_band_roformer_instrumental_becruily.ckpt'],
+    'inst_v1e.ckpt': [('https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'inst_v1e.yaml'), 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/inst_v1e.ckpt'],
+    'inst_gabox.ckpt': [('https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'inst_gabox.yaml'), 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.ckpt'],
+    'inst_gaboxBv1.ckpt': [('https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'inst_gaboxBv1.yaml'), 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gaboxBv1.ckpt'],
+    'inst_gaboxBv2.ckpt': [('https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'inst_gaboxBv2.yaml'), 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gaboxBv2.ckpt'],
+    'inst_gaboxFv2.ckpt': [('https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'inst_gaboxFv2.yaml'), 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gaboxFv2.ckpt'],
+    'inst_gaboxFv3.ckpt': [('https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'inst_gaboxFv3.yaml'), 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gaboxFv3.ckpt'],
+    'intrumental_gabox.ckpt': [('https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'intrumental_gabox.yaml'), 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/intrumental_gabox.ckpt'],
+    'inst_Fv4Noise.ckpt': [('https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'inst_Fv4Noise.yaml'), 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_Fv4Noise.ckpt'],
+    'inst_Fv4.ckpt': [('https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'inst_Fv4.yaml'), 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_Fv4.ckpt'],
+    'INSTV5.ckpt': [('https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'INSTV5.yaml'), 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/INSTV5.ckpt'],
+    'INSTV5N.ckpt': [('https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'INSTV5N.yaml'), 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/INSTV5N.ckpt'],
     'INSTV6N.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/INSTV6N.ckpt'],
     'Inst_GaboxV7.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/Inst_GaboxV7.ckpt'],
     'INSTV7N.ckpt': ['https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/inst_gabox.yaml', 'https://huggingface.co/GaboxR67/MelBandRoformers/resolve/main/melbandroformers/instrumental/INSTV7N.ckpt'],
@@ -340,10 +340,104 @@ MODEL_DOWNLOAD_URLS = {
     'checkpoint-eng_state_dict.ckpt': ['https://huggingface.co/jarredou/banditv2_state_dicts_only/resolve/main/config_dnr_bandit_v2_mus64.yaml', 'https://huggingface.co/jarredou/banditv2_state_dicts_only/resolve/main/checkpoint-eng_state_dict.ckpt'],
 }
 
+# Models where the "vocals"-labeled output file actually contains the instrumental audio
+# (due to legacy BSRoformer loading reversing the target_instrument order).
+# For these, stem labels are swapped: "vocals" file → treat as "other" (instrumental),
+# "instrument"/"other" file → treat as "vocals" (residual).
+STEM_INVERTED_MODELS = {
+    'bs_roformer_inst_hyperacev2.ckpt',
+}
+
 # Custom model URLs for models needing a custom .py file
 MODEL_CUSTOM_PY_URLS = {
     'bs_hyperace.ckpt': 'https://huggingface.co/pcunwa/BS-Roformer-HyperACE/resolve/main/bs_roformer.py',
+    'bs_roformer_voc_hyperacev2.ckpt': 'https://huggingface.co/pcunwa/BS-Roformer-HyperACE/resolve/main/v2_voc/bs_roformer.py',
+    'bs_roformer_inst_hyperacev2.ckpt': 'https://huggingface.co/pcunwa/BS-Roformer-HyperACE/resolve/main/v2_inst/bs_roformer.py',
 }
+
+
+def is_custom_py_model(checkpoint_filename):
+    """Check if a model requires the custom BSRoformer module (HyperACE etc.).
+    
+    These models cannot be loaded by audio_separator's built-in BSRoformer class
+    and must use SESA's native inference pipeline instead.
+    """
+    return checkpoint_filename in MODEL_CUSTOM_PY_URLS
+
+
+def setup_custom_bs_roformer(model_file_dir=None):
+    """Copy downloaded bs_roformer.py to the proper import path for custom BSRoformer models.
+    
+    The custom bs_roformer.py defines a BSRoformer class with HyperACE architecture
+    that the standard audio_separator library doesn't support.
+    It needs to be at: models/bs_roformer/bs_roformer_custom/bs_roformer.py
+    """
+    source_dir = model_file_dir or MODEL_CACHE_DIR
+    source_py = os.path.join(source_dir, 'bs_roformer.py')
+    
+    if not os.path.isfile(source_py):
+        logger.warning(f"Custom bs_roformer.py not found at {source_py}")
+        return False
+    
+    # Find the models directory relative to the project
+    # Look for models/bs_roformer/ directory
+    import shutil
+    
+    # Try multiple possible base directories (Colab uses flat layout, local uses nested)
+    possible_bases = [
+        os.getcwd(),  # current working directory (usually project root in Colab)
+        os.path.dirname(os.path.abspath(__file__)),  # same dir as this file
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),  # parent dir (local nested layout)
+    ]
+    
+    for base_dir in possible_bases:
+        target_dir = os.path.join(base_dir, 'models', 'bs_roformer', 'bs_roformer_custom')
+        bs_roformer_dir = os.path.join(base_dir, 'models', 'bs_roformer')
+        if os.path.isdir(bs_roformer_dir):
+            os.makedirs(target_dir, exist_ok=True)
+            # Create __init__.py
+            init_file = os.path.join(target_dir, '__init__.py')
+            if not os.path.exists(init_file):
+                with open(init_file, 'w') as f:
+                    f.write('# Auto-generated for custom BSRoformer models\n')
+            # Copy the custom bs_roformer.py
+            target_py = os.path.join(target_dir, 'bs_roformer.py')
+            shutil.copy2(source_py, target_py)
+            logger.info(f"✅ Custom bs_roformer.py installed to {target_dir}")
+            return True
+    
+    logger.warning(f"Could not find models/bs_roformer/ directory to install custom module. Searched: {possible_bases}")
+    return False
+
+
+def get_custom_model_config_path(checkpoint_filename, model_file_dir=None):
+    """Get the config YAML path for a custom model.
+    
+    Maps checkpoint filenames to their corresponding config YAML filenames
+    based on MODEL_DOWNLOAD_URLS entries (which use tuple format for renaming).
+    """
+    target_dir = model_file_dir or MODEL_CACHE_DIR
+    urls = MODEL_DOWNLOAD_URLS.get(checkpoint_filename, [])
+    
+    import urllib.parse
+    for url_entry in urls:
+        if isinstance(url_entry, tuple):
+            _, target_name = url_entry
+        else:
+            target_name = os.path.basename(urllib.parse.urlparse(url_entry).path.split('?')[0])
+            
+        if target_name.endswith('.yaml'):
+            config_path = os.path.join(target_dir, target_name)
+            if os.path.isfile(config_path):
+                return config_path
+    
+    # Fallback: scan for any yaml file that matches the model name pattern
+    model_basename = checkpoint_filename.rsplit('.', 1)[0]
+    for f in os.listdir(target_dir):
+        if f.endswith('.yaml') and (model_basename in f or f.replace('.yaml', '') in model_basename):
+            return os.path.join(target_dir, f)
+    
+    return None
 
 
 def ensure_model_files_downloaded(checkpoint_filename, model_file_dir=None):
@@ -367,6 +461,10 @@ def ensure_model_files_downloaded(checkpoint_filename, model_file_dir=None):
         logger.debug(f"No download URLs for {checkpoint_filename}, assuming base model")
         return True, "Base model (no pre-download needed)"
     
+    failures = []
+    ckpt_ok = False
+    downloaded_yaml_name = None
+    
     for url_entry in urls:
         # Handle (url, target_filename) tuples for files that need renaming
         if isinstance(url_entry, tuple):
@@ -377,7 +475,47 @@ def ensure_model_files_downloaded(checkpoint_filename, model_file_dir=None):
         
         success, result = download_model_from_url(url, target_name, target_dir)
         if not success:
-            return False, f"Failed to download {target_name}: {result}"
+            logger.warning(f"Failed to download {target_name}: {result}")
+            failures.append(target_name)
+        elif target_name == checkpoint_filename:
+            ckpt_ok = True
+        elif target_name.endswith('.yaml'):
+            downloaded_yaml_name = target_name
+    
+    # Create a model-named copy of the YAML so the separator bypass can find it via exact match.
+    # e.g. v10.yaml -> inst_gaboxFlowersV10.yaml alongside inst_gaboxFlowersV10.ckpt
+    # Also inject model_type so audio_separator's configuration_normalizer can detect the architecture.
+    if downloaded_yaml_name:
+        model_basename = checkpoint_filename.rsplit('.', 1)[0]
+        model_yaml_name = model_basename + '.yaml'
+        src = os.path.join(target_dir, downloaded_yaml_name)
+        dst = os.path.join(target_dir, model_yaml_name)
+        needs_write = not os.path.isfile(dst)
+        if not needs_write and os.path.isfile(dst):
+            try:
+                with open(dst, 'r', encoding='utf-8') as f:
+                    existing = yaml.load(f, Loader=yaml.FullLoader)
+                if isinstance(existing, dict) and 'model_type' not in existing:
+                    needs_write = True
+            except Exception:
+                needs_write = True
+        if os.path.isfile(src) and needs_write:
+            try:
+                with open(src, 'r', encoding='utf-8') as f:
+                    yaml_data = yaml.load(f, Loader=yaml.FullLoader)
+                if isinstance(yaml_data, dict) and 'model_type' not in yaml_data:
+                    model_section = yaml_data.get('model', {})
+                    if isinstance(model_section, dict):
+                        if 'num_bands' in model_section:
+                            yaml_data['model_type'] = 'mel_band_roformer'
+                        elif 'freqs_per_bands' in model_section:
+                            yaml_data['model_type'] = 'bs_roformer'
+                with open(dst, 'w', encoding='utf-8') as f:
+                    yaml.dump(yaml_data, f, default_flow_style=False, allow_unicode=True)
+                logger.debug(f"Created model-named YAML alias: {model_yaml_name} (model_type={yaml_data.get('model_type', 'unset')})")
+            except Exception as e:
+                shutil.copy2(src, dst)
+                logger.warning(f"Could not inject model_type into {model_yaml_name}, copied as-is: {e}")
     
     # Download custom .py if needed
     py_url = MODEL_CUSTOM_PY_URLS.get(checkpoint_filename)
@@ -386,6 +524,18 @@ def ensure_model_files_downloaded(checkpoint_filename, model_file_dir=None):
         success, result = download_model_from_url(py_url, py_name, target_dir)
         if not success:
             logger.warning(f"Failed to download custom .py: {result}")
+            failures.append(py_name)
+        else:
+            # Install the custom module to the proper import path
+            setup_custom_bs_roformer(target_dir)
+    
+    # Check if the checkpoint file itself exists (most critical file)
+    ckpt_path = os.path.join(target_dir, checkpoint_filename)
+    if not os.path.isfile(ckpt_path):
+        return False, f"Checkpoint file {checkpoint_filename} not downloaded. Failures: {', '.join(failures)}"
+    
+    if failures:
+        return True, f"Checkpoint OK but some files failed: {', '.join(failures)}"
     
     return True, f"All files downloaded for {checkpoint_filename}"
 
@@ -431,9 +581,15 @@ def download_model_from_url(url, target_filename=None, target_dir=None):
         logger.info(f"Model file already exists: {file_path}")
         return True, file_path
     
+    # Build request headers — include HF token for gated/private repos
+    headers = {}
+    hf_token = os.environ.get('HF_TOKEN', '')
+    if hf_token and 'huggingface.co' in url:
+        headers['Authorization'] = f'Bearer {hf_token}'
+    
     try:
         logger.info(f"Downloading: {url} → {file_path}")
-        response = requests.get(url, stream=True, timeout=300)
+        response = requests.get(url, stream=True, timeout=300, headers=headers)
         response.raise_for_status()
         
         total_size = int(response.headers.get('content-length', 0))
