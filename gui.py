@@ -28,9 +28,7 @@ from models_config import (
     EXTENDED_MODELS, get_all_models, get_categories, get_model_choices,
     find_model_filename, add_custom_model, delete_custom_model, load_custom_models,
     get_custom_models_list, ensure_model_files_downloaded,
-    is_custom_py_model, get_custom_model_config_path, STEM_INVERTED_MODELS,
-    get_audio_duration, split_audio_segments, concatenate_segment_outputs,
-    MAX_UNSPLIT_DURATION, SEGMENT_DURATION
+    is_custom_py_model, get_custom_model_config_path, STEM_INVERTED_MODELS
 )
 
 # Logging setup
@@ -434,7 +432,6 @@ def roformer_separator(audio, model_key, seg_size, override_seg_size, overlap, p
         raise ValueError("No audio or video file provided.")
     temp_audio_path = None
     extracted_audio_path = None
-    segment_temp_dir = None
     try:
         file_extension = os.path.splitext(audio)[1].lower().lstrip('.')
         supported_formats = ['wav', 'mp3', 'flac', 'ogg', 'opus', 'm4a', 'aiff', 'ac3', 'mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'webm', 'mpeg', 'mpg', 'ts', 'vob']
@@ -598,69 +595,20 @@ def roformer_separator(audio, model_key, seg_size, override_seg_size, overlap, p
             except Exception as e:
                 logger.error(f"Failed to monkey-patch audio_separator: {e}")
 
-        # ── Large file segmentation ──
-        audio_duration = get_audio_duration(audio_to_process)
-        was_segmented = False
-        if audio_duration > MAX_UNSPLIT_DURATION:
-            duration_min = audio_duration / 60
-            logger.info(f"⚠️ Large audio detected: {duration_min:.0f} min. Splitting to prevent OOM...")
-            progress(0.05, desc=f"Splitting {duration_min:.0f} min audio into segments...")
-            segment_temp_dir = os.path.join("/tmp", f"sesa_segments_{base_name}")
-            os.makedirs(segment_temp_dir, exist_ok=True)
-            segments = split_audio_segments(audio_to_process, segment_temp_dir, SEGMENT_DURATION)
-            if segments:
-                was_segmented = True
-                logger.info(f"Split into {len(segments)} segments")
-                # Process each segment
-                seg_output_dir = os.path.join("/tmp", f"sesa_seg_output_{base_name}")
-                os.makedirs(seg_output_dir, exist_ok=True)
-                for i, seg_path in enumerate(segments):
-                    progress(0.1 + 0.7 * (i / len(segments)), desc=f"Processing segment {i+1}/{len(segments)}...")
-                    separator = Separator(
-                        log_level=logging.INFO,
-                        model_file_dir=model_dir,
-                        output_dir=seg_output_dir,
-                        output_format=out_format,
-                        normalization_threshold=norm_thresh,
-                        amplification_threshold=amp_thresh,
-                        use_autocast=use_autocast,
-                        mdxc_params={"segment_size": seg_size, "override_model_segment_size": override_seg_size, "batch_size": batch_size, "overlap": overlap, "pitch_shift": pitch_shift}
-                    )
-                    separator.load_model(model_filename=model)
-                    separator.separate(seg_path)
-                    # Free GPU memory between segments
-                    del separator
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                    gc.collect()
-                # Concatenate segment outputs
-                progress(0.85, desc="Concatenating segments...")
-                concatenate_segment_outputs(seg_output_dir, out_format)
-                # Move final concatenated files to output_dir
-                for f in os.listdir(seg_output_dir):
-                    if '_seg' not in f.lower():  # Only move final merged files
-                        shutil.move(os.path.join(seg_output_dir, f), os.path.join(output_dir, f))
-                # Cleanup temp dirs
-                shutil.rmtree(segment_temp_dir, ignore_errors=True)
-                shutil.rmtree(seg_output_dir, ignore_errors=True)
-                segment_temp_dir = None
-
-        if not was_segmented:
-            # Normal processing (no segmentation)
-            separator = Separator(
-                log_level=logging.INFO,
-                model_file_dir=model_dir,
-                output_dir=output_dir,
-                output_format=out_format,
-                normalization_threshold=norm_thresh,
-                amplification_threshold=amp_thresh,
-                use_autocast=use_autocast,
-                mdxc_params={"segment_size": seg_size, "override_model_segment_size": override_seg_size, "batch_size": batch_size, "overlap": overlap, "pitch_shift": pitch_shift}
-            )
-            progress(0.2, desc="Loading model...")
-            separator.load_model(model_filename=model)
-            progress(0.7, desc="Separating audio...")
-            separator.separate(audio_to_process)
+        separator = Separator(
+            log_level=logging.INFO,
+            model_file_dir=model_dir,
+            output_dir=output_dir,
+            output_format=out_format,
+            normalization_threshold=norm_thresh,
+            amplification_threshold=amp_thresh,
+            use_autocast=use_autocast,
+            mdxc_params={"segment_size": seg_size, "override_model_segment_size": override_seg_size, "batch_size": batch_size, "overlap": overlap, "pitch_shift": pitch_shift}
+        )
+        progress(0.2, desc="Loading model...")
+        separator.load_model(model_filename=model)
+        progress(0.7, desc="Separating audio...")
+        separator.separate(audio_to_process)
 
         # Collect all output stems
         output_files = os.listdir(output_dir)
