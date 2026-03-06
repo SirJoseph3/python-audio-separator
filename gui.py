@@ -561,13 +561,31 @@ def roformer_separator(audio, model_key, seg_size, override_seg_size, overlap, p
                             content = content.replace('models.bs_roformer.attend_sage', 'audio_separator.separator.uvr_lib_v5.roformer.attend')
                             modified = True
                             
-                        # Hot-patch BSRoformer.__init__ to accept arbitrary kwargs (fixes 'zero_dc' unexpected argument error)
-                        if 'sage_attention=False,' in content and '**kwargs' not in content:
-                            content = content.replace('sage_attention=False,', 'sage_attention=False, **kwargs,')
+                        # Revert any previously botched patch that inserted **kwargs everywhere
+                        if 'sage_attention=False, **kwargs,' in content:
+                            content = content.replace('sage_attention=False, **kwargs,', 'sage_attention=False,')
                             modified = True
-                        elif 'skip_connection=False,' in content and '**kwargs' not in content:
-                            content = content.replace('skip_connection=False,', 'skip_connection=False, **kwargs,')
+                        if 'skip_connection=False, **kwargs,' in content:
+                            content = content.replace('skip_connection=False, **kwargs,', 'skip_connection=False,')
                             modified = True
+
+                        # Safely patch ONLY BSRoformer.__init__ to accept arbitrary kwargs
+                        if 'class BSRoformer' in content:
+                            parts = content.split('class BSRoformer')
+                            for i in range(1, len(parts)):
+                                init_idx = parts[i].find('def __init__')
+                                if init_idx != -1:
+                                    close_idx = parts[i].find('):', init_idx)
+                                    if close_idx != -1:
+                                        sig = parts[i][init_idx:close_idx]
+                                        if '**kwargs' not in sig:
+                                            if sig.rstrip().endswith(','):
+                                                new_sig = sig + '\n            **kwargs'
+                                            else:
+                                                new_sig = sig + ',\n            **kwargs'
+                                            parts[i] = parts[i][:init_idx] + new_sig + parts[i][close_idx:]
+                                            modified = True
+                            content = 'class BSRoformer'.join(parts)
                             
                         if modified:
                             with open(custom_py_path, 'w', encoding='utf-8') as f:
