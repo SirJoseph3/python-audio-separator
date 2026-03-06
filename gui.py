@@ -1338,7 +1338,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     app = create_interface()
     try:
-        app.launch(server_name="0.0.0.0", server_port=args.port, share=True)
+        app.launch(server_name="0.0.0.0", server_port=args.port, share=True, allowed_paths=["/content/drive"])
     except Exception as e:
         logger.error(f"Failed to launch UI: {e}")
         raise
