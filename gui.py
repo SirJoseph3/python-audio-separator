@@ -1179,7 +1179,10 @@ def create_interface():
                 with gr.Group(elem_classes="dubbing-theme"):
                     gr.Markdown("### General Settings")
                     model_file_dir = gr.Textbox(value="/tmp/audio-separator-models/", label="📂 Model Cache", placeholder="Path to model directory", interactive=True)
-                    output_dir = gr.Textbox(value="output", label="📤 Output Directory", placeholder="Where to save results", interactive=True)
+                    default_output_dir = "/content/drive/MyDrive/sesa_fast_output" if os.path.exists("/content/drive/MyDrive") else "output"
+                    if default_output_dir == "/content/drive/MyDrive/sesa_fast_output" and not os.path.exists(default_output_dir):
+                        os.makedirs(default_output_dir, exist_ok=True)
+                    output_dir = gr.Textbox(value=default_output_dir, label="📤 Output Directory", placeholder="Where to save results", interactive=True)
                     output_format = gr.Dropdown(value="wav", choices=OUTPUT_FORMATS, label="🎶 Output Format", interactive=True)
                     norm_threshold = gr.Slider(0.1, 1.0, value=0.9, step=0.1, label="🔊 Normalization Threshold", interactive=True)
                     amp_threshold = gr.Slider(0.1, 1.0, value=0.3, step=0.1, label="📈 Amplification Threshold", interactive=True)
