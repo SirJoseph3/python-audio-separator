@@ -7,3 +7,4 @@ youtube_dl
 validators
 matchering==2.0.6
 spaces
+neuraloperator==1.0.2
