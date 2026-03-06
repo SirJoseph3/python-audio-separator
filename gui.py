@@ -509,6 +509,14 @@ def roformer_separator(audio, model_key, seg_size, override_seg_size, overlap, p
                         config_content += '\n\nmodel_type: mel_band_roformer\ntype: mel_band_roformer\n'
                         modified_config = True
                 
+                # 3. Hot-patch BS-Roformer-Large configs with wrong mask_estimator_depth parameter
+                # The large models require mask_estimator_depth: 3 but config has 2
+                if model_key == 'BS-Roformer-Large-Inst (by unwa)':
+                    if 'mask_estimator_depth: 2' in config_content:
+                        logger.info(f"🔧 Hot-patching config {config_path} with mask_estimator_depth: 3")
+                        config_content = config_content.replace('mask_estimator_depth: 2', 'mask_estimator_depth: 3')
+                        modified_config = True
+                        
                 if modified_config:
                     with open(config_path, 'w', encoding='utf-8') as f:
                         f.write(config_content)
@@ -551,6 +559,14 @@ def roformer_separator(audio, model_key, seg_size, override_seg_size, overlap, p
                             modified = True
                         if 'models.bs_roformer.attend_sage' in content:
                             content = content.replace('models.bs_roformer.attend_sage', 'audio_separator.separator.uvr_lib_v5.roformer.attend')
+                            modified = True
+                            
+                        # Hot-patch BSRoformer.__init__ to accept arbitrary kwargs (fixes 'zero_dc' unexpected argument error)
+                        if 'sage_attention=False,' in content and '**kwargs' not in content:
+                            content = content.replace('sage_attention=False,', 'sage_attention=False, **kwargs,')
+                            modified = True
+                        elif 'skip_connection=False,' in content and '**kwargs' not in content:
+                            content = content.replace('skip_connection=False,', 'skip_connection=False, **kwargs,')
                             modified = True
                             
                         if modified:
