@@ -260,10 +260,9 @@ MODEL_DOWNLOAD_URLS = {
     # === Instrumental Models ===
     'Neo_InstVFX.ckpt': ['https://huggingface.co/natanworkspace/melband_roformer/resolve/main/config_neo_inst.yaml', 'https://huggingface.co/natanworkspace/melband_roformer/resolve/main/Neo_InstVFX.ckpt'],
     'BS-Roformer-Resurrection-Inst.ckpt': ['https://huggingface.co/pcunwa/BS-Roformer-Resurrection/resolve/main/BS-Roformer-Resurrection-Inst-Config.yaml', 'https://huggingface.co/pcunwa/BS-Roformer-Resurrection/resolve/main/BS-Roformer-Resurrection-Inst.ckpt'],
-    'bs_roformer_fno.ckpt': ['https://huggingface.co/pcunwa/BS-Roformer-Inst-FNO/resolve/main/bsrofo_fno.yaml', 'https://huggingface.co/pcunwa/BS-Roformer-Inst-FNO/resolve/main/bs_roformer_fno.ckpt'],
     'bs_roformer_inst_hyperacev2.ckpt': [('https://huggingface.co/pcunwa/BS-Roformer-HyperACE/resolve/main/v2_inst/config.yaml', 'bs_roformer_inst_hyperacev2.yaml'), 'https://huggingface.co/pcunwa/BS-Roformer-HyperACE/resolve/main/v2_inst/bs_roformer_inst_hyperacev2.ckpt'],
     'bs_large_v2_inst.ckpt': [('https://huggingface.co/pcunwa/BS-Roformer-Large-Inst/resolve/main/config.yaml', 'bs_large_v2_inst.yaml'), 'https://huggingface.co/pcunwa/BS-Roformer-Large-Inst/resolve/main/bs_large_v2_inst.ckpt'],
-    'rifforge_full_sdr_14.2436.ckpt': ['https://huggingface.co/meskvlla33/rifforge/resolve/main/config_rifforge_full_mesk.yaml', 'https://huggingface.co/meskvlla33/rifforge/resolve/main/rifforge_full_sdr_14.2436.ckpt'],
+    'rifforge_full_sdr_14.2436.ckpt': ['https://huggingface.co/meskvlla33/rifforge/resolve/main/rifforge_config.yaml', 'https://huggingface.co/meskvlla33/rifforge/resolve/main/rifforge_full_sdr_14.2436.ckpt'],
     'melband_roformer_inst_v1.ckpt': [('https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'melband_roformer_inst_v1.yaml'), 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/melband_roformer_inst_v1.ckpt'],
     'inst_v1e_plus.ckpt': [('https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'inst_v1e_plus.yaml'), 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/inst_v1e_plus.ckpt'],
     'inst_v1_plus_test.ckpt': [('https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/config_melbandroformer_inst.yaml', 'inst_v1_plus_test.yaml'), 'https://huggingface.co/pcunwa/Mel-Band-Roformer-Inst/resolve/main/inst_v1_plus_test.ckpt'],
@@ -355,7 +354,6 @@ MODEL_CUSTOM_PY_URLS = {
     'bs_roformer_voc_hyperacev2.ckpt': 'https://huggingface.co/pcunwa/BS-Roformer-HyperACE/resolve/main/v2_voc/bs_roformer.py',
     'bs_roformer_inst_hyperacev2.ckpt': 'https://huggingface.co/pcunwa/BS-Roformer-HyperACE/resolve/main/v2_inst/bs_roformer.py',
     'bs_large_v2_inst.ckpt': 'https://huggingface.co/pcunwa/BS-Roformer-Large-Inst/resolve/main/bs_roformer.py',
-    'bs_roformer_fno.ckpt': 'local_generated',
 }
 
 
@@ -523,19 +521,14 @@ def ensure_model_files_downloaded(checkpoint_filename, model_file_dir=None):
     # Download custom .py if needed
     py_url = MODEL_CUSTOM_PY_URLS.get(checkpoint_filename)
     if py_url:
-        if py_url == 'local_generated':
-            # This is a special case for models that require a local generated py script
-            # such as FNO models that require dynamic generation based on core files.
-            pass  # Handle the generation in gui.py specifically before loading
+        py_name = os.path.basename(urllib.parse.urlparse(py_url).path.split('?')[0])
+        success, result = download_model_from_url(py_url, py_name, target_dir)
+        if not success:
+            logger.warning(f"Failed to download custom .py: {result}")
+            failures.append(py_name)
         else:
-            py_name = os.path.basename(urllib.parse.urlparse(py_url).path.split('?')[0])
-            success, result = download_model_from_url(py_url, py_name, target_dir)
-            if not success:
-                logger.warning(f"Failed to download custom .py: {result}")
-                failures.append(py_name)
-            else:
-                # Install the custom module to the proper import path
-                setup_custom_bs_roformer(target_dir)
+            # Install the custom module to the proper import path
+            setup_custom_bs_roformer(target_dir)
     
     # Check if the checkpoint file itself exists (most critical file)
     ckpt_path = os.path.join(target_dir, checkpoint_filename)
